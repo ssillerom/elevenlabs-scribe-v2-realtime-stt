@@ -3,7 +3,7 @@
 Proyecto de ejemplo para transcripción en tiempo real usando el modelo Scribe V2 de ElevenLabs.
 Permite enviar audio vía WebSocket desde un cliente (HTML) y recibir transcripciones parciales/finales en tiempo real.
 
-## Captura de pantalla
+## Screenshot del Cliente
 
 ![Interfaz del cliente](images/client_demo.png)
 
