@@ -145,7 +145,7 @@ Pull requests bienvenidos. Abre issues para bugs o mejoras. Mantén los cambios 
 
 ## Licencia
 
-Añade aquí la licencia del proyecto si procede (por ejemplo MIT).
+Apache 2.0
 
 ## Contacto / Recursos
 

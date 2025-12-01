@@ -274,10 +274,6 @@
                         if (data.transcript && data.transcript.trim()) {
                             finalTranscriptsCount++;
                             
-                            // Agregar info de palabras si están disponibles
-                            let extra = '';
-                            if (data.words && data.words.length > 0) {
-                                extra = `${data.words.length} palabras detectadas`;
                             }
                             
                             addTranscript('final', data.transcript, extra);
