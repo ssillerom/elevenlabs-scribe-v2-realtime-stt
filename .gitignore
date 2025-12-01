@@ -10,3 +10,4 @@ wheels/
 .venv
 # local environment variables
 .env
+.DS_Store
