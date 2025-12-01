@@ -3,6 +3,10 @@
 Proyecto de ejemplo para transcripción en tiempo real usando el modelo Scribe V2 de ElevenLabs.
 Permite enviar audio vía WebSocket desde un cliente (HTML) y recibir transcripciones parciales/finales en tiempo real.
 
+## Captura de pantalla
+
+![Interfaz del cliente](images/client_demo.png)
+
 **Estado:** Inicial — instrucciones de uso y desarrollo.
 
 ## Contenido
@@ -94,6 +98,10 @@ Para probarlo localmente, sirve la carpeta `client/` con un servidor HTTP:
 uv run python -m http.server 8000 --directory client
 # Luego abre http://localhost:8000/elevenlabs_stt_realtime.html
 ```
+Pasos en el frontal:
+- Dale a conectar 
+- Despues dale al simbolo del microfono y dale permisos
+- Comienza a hablar y verás las transcripciones
 
 **Nota:** El navegador debe permitir el acceso al micrófono y el servidor debe estar corriendo (CORS permitido por defecto en el backend).
 
