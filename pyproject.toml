@@ -1,0 +1,12 @@
+[project]
+name = "elevenlabs-scribe-v2-realtime-stt"
+version = "0.1.0"
+description = "Add your description here"
+readme = "README.md"
+requires-python = ">=3.13"
+dependencies = [
+    "elevenlabs>=2.25.0",
+    "fastapi>=0.123.0",
+    "python-dotenv>=1.2.1",
+    "uvicorn>=0.38.0",
+]

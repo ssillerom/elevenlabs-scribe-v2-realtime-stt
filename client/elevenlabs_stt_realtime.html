@@ -1,0 +1,398 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>ElevenLabs STT - Scribe V2 Realtime</title>
+    <style>
+        body {
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            max-width: 800px;
+            margin: 50px auto;
+            padding: 20px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            min-height: 100vh;
+        }
+        .container {
+            background: white;
+            padding: 30px;
+            border-radius: 15px;
+            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+        }
+        h1 {
+            color: #333;
+            text-align: center;
+            margin-bottom: 30px;
+        }
+        .status {
+            padding: 15px;
+            border-radius: 8px;
+            margin-bottom: 20px;
+            font-weight: bold;
+            text-align: center;
+        }
+        .status.disconnected { background: #fee; color: #c33; }
+        .status.connecting { background: #ffc; color: #990; }
+        .status.connected { background: #efe; color: #3a3; }
+        .controls {
+            display: flex;
+            gap: 10px;
+            margin-bottom: 20px;
+            justify-content: center;
+        }
+        button {
+            padding: 12px 24px;
+            font-size: 16px;
+            border: none;
+            border-radius: 8px;
+            cursor: pointer;
+            font-weight: bold;
+            transition: all 0.3s;
+        }
+        button:hover { transform: translateY(-2px); box-shadow: 0 5px 15px rgba(0,0,0,0.2); }
+        button:disabled { opacity: 0.5; cursor: not-allowed; transform: none; }
+        .btn-connect { background: #4CAF50; color: white; }
+        .btn-disconnect { background: #f44336; color: white; }
+        .btn-mic { background: #2196F3; color: white; font-size: 20px; }
+        .btn-mic.recording { background: #ff5722; animation: pulse 1.5s infinite; }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.6; }
+        }
+        .transcripts {
+            background: #f9f9f9;
+            border: 2px solid #ddd;
+            border-radius: 8px;
+            padding: 20px;
+            min-height: 300px;
+            max-height: 400px;
+            overflow-y: auto;
+        }
+        .transcript-item {
+            margin-bottom: 15px;
+            padding: 10px;
+            border-radius: 5px;
+            animation: slideIn 0.3s ease-out;
+        }
+        @keyframes slideIn {
+            from { opacity: 0; transform: translateY(-10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        .transcript-item.partial {
+            background: #e3f2fd;
+            border-left: 4px solid #2196F3;
+            font-style: italic;
+        }
+        .transcript-item.final {
+            background: #e8f5e9;
+            border-left: 4px solid #4CAF50;
+            font-weight: bold;
+        }
+        .transcript-item.error {
+            background: #ffebee;
+            border-left: 4px solid #f44336;
+            color: #c33;
+        }
+        .transcript-label {
+            font-size: 12px;
+            color: #666;
+            margin-bottom: 5px;
+        }
+        .transcript-text {
+            font-size: 16px;
+            line-height: 1.5;
+        }
+        .stats {
+            margin-top: 20px;
+            padding: 15px;
+            background: #f5f5f5;
+            border-radius: 8px;
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+            gap: 10px;
+        }
+        .stat-item {
+            text-align: center;
+        }
+        .stat-value {
+            font-size: 24px;
+            font-weight: bold;
+            color: #667eea;
+        }
+        .stat-label {
+            font-size: 12px;
+            color: #666;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🎤 ElevenLabs STT - Scribe V2 Realtime</h1>
+        
+        <div id="status" class="status disconnected">Desconectado</div>
+        
+        <div class="controls">
+            <button id="connectBtn" class="btn-connect" onclick="connect()">Conectar</button>
+            <button id="disconnectBtn" class="btn-disconnect" onclick="disconnect()" disabled>Desconectar</button>
+            <button id="micBtn" class="btn-mic" onclick="toggleMic()" disabled>🎤</button>
+        </div>
+        
+        <div class="transcripts" id="transcripts">
+            <p style="text-align: center; color: #999;">Las transcripciones aparecerán aquí...</p>
+        </div>
+        
+        <div class="stats">
+            <div class="stat-item">
+                <div class="stat-value" id="audioSent">0</div>
+                <div class="stat-label">Chunks enviados</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="transcriptsReceived">0</div>
+                <div class="stat-label">Transcripciones</div>
+            </div>
+            <div class="stat-item">
+                <div class="stat-value" id="finalTranscripts">0</div>
+                <div class="stat-label">Finales</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        let ws = null;
+        let mediaRecorder = null;
+        let audioContext = null;
+        let isRecording = false;
+        let audioChunksSent = 0;
+        let transcriptsReceived = 0;
+        let finalTranscriptsCount = 0;
+
+        const statusEl = document.getElementById('status');
+        const transcriptsEl = document.getElementById('transcripts');
+        const connectBtn = document.getElementById('connectBtn');
+        const disconnectBtn = document.getElementById('disconnectBtn');
+        const micBtn = document.getElementById('micBtn');
+
+        function updateStatus(message, className) {
+            statusEl.textContent = message;
+            statusEl.className = `status ${className}`;
+        }
+
+        function updateStats() {
+            document.getElementById('audioSent').textContent = audioChunksSent;
+            document.getElementById('transcriptsReceived').textContent = transcriptsReceived;
+            document.getElementById('finalTranscripts').textContent = finalTranscriptsCount;
+        }
+
+        function addTranscript(type, text, extra = '') {
+            const firstItem = transcriptsEl.firstChild;
+            // Si el último elemento es parcial y estamos recibiendo otro parcial o un final, actualizamos
+            const isLastPartial = firstItem && firstItem.classList && firstItem.classList.contains('partial');
+            
+            if (isLastPartial && (type === 'partial' || type === 'final')) {
+                const label = firstItem.querySelector('.transcript-label');
+                const textDiv = firstItem.querySelector('.transcript-text');
+                
+                textDiv.textContent = text;
+                
+                if (type === 'final') {
+                    firstItem.className = 'transcript-item final';
+                    label.textContent = '✅ Final';
+                    
+                    if (extra) {
+                        const extraDiv = document.createElement('div');
+                        extraDiv.style.fontSize = '12px';
+                        extraDiv.style.color = '#666';
+                        extraDiv.style.marginTop = '5px';
+                        extraDiv.textContent = extra;
+                        firstItem.appendChild(extraDiv);
+                    }
+                }
+                return;
+            }
+
+            const item = document.createElement('div');
+            item.className = `transcript-item ${type}`;
+            
+            const label = document.createElement('div');
+            label.className = 'transcript-label';
+            label.textContent = type === 'partial' ? '💬 Parcial' : type === 'final' ? '✅ Final' : '❌ Error';
+            
+            const textDiv = document.createElement('div');
+            textDiv.className = 'transcript-text';
+            textDiv.textContent = text;
+            
+            item.appendChild(label);
+            item.appendChild(textDiv);
+            
+            if (extra) {
+                const extraDiv = document.createElement('div');
+                extraDiv.style.fontSize = '12px';
+                extraDiv.style.color = '#666';
+                extraDiv.style.marginTop = '5px';
+                extraDiv.textContent = extra;
+                item.appendChild(extraDiv);
+            }
+            
+            if (transcriptsEl.firstChild && transcriptsEl.firstChild.tagName === 'P') {
+                transcriptsEl.innerHTML = '';
+            }
+            
+            transcriptsEl.insertBefore(item, transcriptsEl.firstChild);
+            
+            // Limitar a 50 transcripciones
+            while (transcriptsEl.children.length > 50) {
+                transcriptsEl.removeChild(transcriptsEl.lastChild);
+            }
+        }
+
+        async function connect() {
+            try {
+                updateStatus('Conectando...', 'connecting');
+                
+                // Conectar WebSocket
+                ws = new WebSocket('ws://localhost:5050/v1/elevenlabs/ws/elevenlabs-voice');
+                
+                ws.onopen = () => {
+                    updateStatus('Conectado', 'connected');
+                    connectBtn.disabled = true;
+                    disconnectBtn.disabled = false;
+                    micBtn.disabled = false;
+                    console.log('WebSocket conectado');
+                };
+                
+                ws.onmessage = (event) => {
+                    const data = JSON.parse(event.data);
+                    console.log('Mensaje recibido:', data);
+                    
+                    transcriptsReceived++;
+                    
+                    if (data.type === 'partial') {
+                        if (data.transcript && data.transcript.trim()) {
+                            addTranscript('partial', data.transcript);
+                        }
+                    } else if (data.type === 'final' || data.type === 'final_with_timestamps') {
+                        if (data.transcript && data.transcript.trim()) {
+                            finalTranscriptsCount++;
+                            
+                            // Agregar info de palabras si están disponibles
+                            let extra = '';
+                            if (data.words && data.words.length > 0) {
+                                extra = `${data.words.length} palabras detectadas`;
+                            }
+                            
+                            addTranscript('final', data.transcript, extra);
+                        }
+                    } else if (data.type === 'error') {
+                        addTranscript('error', data.error);
+                    }
+                    
+                    updateStats();
+                };
+                
+                ws.onerror = (error) => {
+                    console.error('WebSocket error:', error);
+                    updateStatus('Error de conexión', 'disconnected');
+                };
+                
+                ws.onclose = () => {
+                    updateStatus('Desconectado', 'disconnected');
+                    connectBtn.disabled = false;
+                    disconnectBtn.disabled = true;
+                    micBtn.disabled = true;
+                    if (isRecording) stopRecording();
+                    console.log('WebSocket cerrado');
+                };
+                
+            } catch (error) {
+                console.error('Error conectando:', error);
+                updateStatus('Error al conectar', 'disconnected');
+            }
+        }
+
+        function disconnect() {
+            if (ws) {
+                ws.close();
+                ws = null;
+            }
+            if (isRecording) stopRecording();
+        }
+
+        async function toggleMic() {
+            if (isRecording) {
+                stopRecording();
+            } else {
+                await startRecording();
+            }
+        }
+
+        async function startRecording() {
+            try {
+                // Solicitar acceso al micrófono
+                const stream = await navigator.mediaDevices.getUserMedia({ 
+                    audio: {
+                        sampleRate: 16000,
+                        channelCount: 1,
+                        echoCancellation: true,
+                        noiseSuppression: true,
+                    }
+                });
+                
+                // Crear AudioContext para procesar el audio
+                audioContext = new (window.AudioContext || window.webkitAudioContext)({ sampleRate: 16000 });
+                const source = audioContext.createMediaStreamSource(stream);
+                
+                // Crear procesador para capturar audio en PCM
+                const processor = audioContext.createScriptProcessor(4096, 1, 1);
+                
+                processor.onaudioprocess = (e) => {
+                    if (!isRecording) return;
+                    
+                    const inputData = e.inputBuffer.getChannelData(0);
+                    
+                    // Convertir Float32Array a Int16Array (PCM 16-bit)
+                    const pcmData = new Int16Array(inputData.length);
+                    for (let i = 0; i < inputData.length; i++) {
+                        const s = Math.max(-1, Math.min(1, inputData[i]));
+                        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+                    }
+                    
+                    // Enviar por WebSocket
+                    if (ws && ws.readyState === WebSocket.OPEN) {
+                        ws.send(pcmData.buffer);
+                        audioChunksSent++;
+                        updateStats();
+                    }
+                };
+                
+                source.connect(processor);
+                processor.connect(audioContext.destination);
+                
+                isRecording = true;
+                micBtn.classList.add('recording');
+                micBtn.textContent = '⏹️';
+                console.log('Grabación iniciada');
+                
+            } catch (error) {
+                console.error('Error accediendo al micrófono:', error);
+                alert('Error al acceder al micrófono. Verifica los permisos.');
+            }
+        }
+
+        function stopRecording() {
+            isRecording = false;
+            micBtn.classList.remove('recording');
+            micBtn.textContent = '🎤';
+            
+            if (audioContext) {
+                audioContext.close();
+                audioContext = null;
+            }
+            
+            console.log('Grabación detenida');
+        }
+
+        // Auto-conectar al cargar la página (opcional)
+        // window.addEventListener('load', connect);
+    </script>
+</body>
+</html>
